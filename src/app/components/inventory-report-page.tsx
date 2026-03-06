@@ -5,6 +5,8 @@ import {
   type SalesDashboardRawRow
 } from "../../services/salesDashboard.service";
 
+const INVENTORY_DATE_KEYS = ["entry_date", "created_at"] as const;
+
 interface InventoryItem {
   name: string;
   ggTrans: string;
@@ -48,6 +50,35 @@ const pickNumber = (row: SalesDashboardRawRow, keys: string[]): number => {
   return 0;
 };
 
+const toLocalDateKey = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return "";
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const pickReportDate = (row: SalesDashboardRawRow): string => {
+  const [entryDateKey, createdAtKey] = INVENTORY_DATE_KEYS;
+  const entryDate = pickString(row, [entryDateKey], "");
+  if (entryDate) return entryDate.slice(0, 10);
+
+  const createdAt = pickString(row, [createdAtKey], "");
+  return toLocalDateKey(createdAt);
+};
+
+const isRowForDate = (row: SalesDashboardRawRow, reportDate: string): boolean => {
+  const rowDate = pickReportDate(row);
+  if (!rowDate) return true;
+  return rowDate === reportDate;
+};
+
 const mapRowToInventoryItem = (row: SalesDashboardRawRow): InventoryItem => ({
   name: pickString(row, ["member_name", "name", "full_name"]),
   ggTrans: pickString(row, ["gg_trans_no", "gg_trans", "gg_transaction_no", "gg_transaction"]),
@@ -77,20 +108,11 @@ const mapRowToInventoryItem = (row: SalesDashboardRawRow): InventoryItem => ({
 });
 
 export function InventoryReportPage() {
+  const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [isPrintHovered, setIsPrintHovered] = useState(false);
   const [inventoryData, setInventoryData] = useState<InventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const today = useMemo(
-    () =>
-      new Date().toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric"
-      }),
-    []
-  );
 
   const totalAmount = useMemo(
     () => inventoryData.reduce((sum, item) => sum + item.amount, 0),
@@ -106,7 +128,7 @@ export function InventoryReportPage() {
         setError(null);
         const rows = await fetchInventoryReportRows();
         if (!active) return;
-        setInventoryData(rows.map(mapRowToInventoryItem));
+        setInventoryData(rows.filter((row) => isRowForDate(row, reportDate)).map(mapRowToInventoryItem));
       } catch (fetchError) {
         if (!active) return;
         const message =
@@ -121,7 +143,7 @@ export function InventoryReportPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [reportDate]);
 
   return (
     <div style={{ fontFamily: "Inter, sans-serif" }}>
@@ -130,6 +152,9 @@ export function InventoryReportPage() {
           @page {
             size: A4 portrait;
             margin: 10mm;
+          }
+          .no-print {
+            display: none !important;
           }
           body * {
             visibility: hidden;
@@ -146,7 +171,7 @@ export function InventoryReportPage() {
         }
       `}</style>
 
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between gap-3 no-print">
         <h1
           style={{
             color: "#2E3A8C",
@@ -156,28 +181,45 @@ export function InventoryReportPage() {
         >
           Inventory Report
         </h1>
-        <button
-          type="button"
-          className="print:hidden flex items-center gap-2 px-6"
-          onClick={() => window.print()}
-          onMouseEnter={() => setIsPrintHovered(true)}
-          onMouseLeave={() => setIsPrintHovered(false)}
-          style={{
-            backgroundColor: isPrintHovered ? "#1F2870" : "#2E3A8C",
-            color: "#FFFFFF",
-            height: "44px",
-            borderRadius: "8px"
-          }}
-        >
-          <Printer className="w-5 h-5" />
-          <span
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span style={{ color: "#374151", fontSize: "14px", fontWeight: 500 }}>Report Date:</span>
+            <input
+              type="date"
+              value={reportDate}
+              onChange={(event) => setReportDate(event.target.value)}
+              className="rounded border px-2 py-1"
+              style={{
+                borderColor: "#D0D5DD",
+                color: "#374151",
+                fontSize: "13px",
+                height: "36px"
+              }}
+            />
+          </div>
+          <button
+            type="button"
+            className="flex items-center gap-2 px-6"
+            onClick={() => window.print()}
+            onMouseEnter={() => setIsPrintHovered(true)}
+            onMouseLeave={() => setIsPrintHovered(false)}
             style={{
-              fontSize: "14px"
+              backgroundColor: isPrintHovered ? "#1F2870" : "#2E3A8C",
+              color: "#FFFFFF",
+              height: "44px",
+              borderRadius: "8px"
             }}
           >
-            Print Report
-          </span>
-        </button>
+            <Printer className="w-5 h-5" />
+            <span
+              style={{
+                fontSize: "14px"
+              }}
+            >
+              Print Report
+            </span>
+          </button>
+        </div>
       </div>
 
       <div id="inventory-report-print" className="bg-white rounded-lg shadow-sm p-8">
@@ -198,7 +240,7 @@ export function InventoryReportPage() {
               marginBottom: "8px"
             }}
           >
-            Inventory Report
+            Inventory Daily Report
           </h3>
           <p
             style={{
@@ -206,7 +248,7 @@ export function InventoryReportPage() {
               fontSize: "14px"
             }}
           >
-            Report Date: {today}
+            Report Date: {reportDate}
           </p>
         </div>
 
@@ -348,7 +390,7 @@ export function InventoryReportPage() {
               ) : inventoryData.length === 0 ? (
                 <tr>
                   <td colSpan={17} className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
-                    No inventory records found.
+                    No inventory records found for {reportDate}.
                   </td>
                 </tr>
               ) : (
