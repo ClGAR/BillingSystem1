@@ -72,6 +72,14 @@ const PACKAGE_PRICE_MAP: Record<string, number> = {
   "Blister (1 blister pack)": 779,
 };
 
+const MEMBER_TYPE_OPTIONS = [
+  { value: "Distributor", label: "Distributor" },
+  { value: "Mobile Stockist", label: "Mobile Stockist" },
+  { value: "City Stockist", label: "City Stockist" },
+  { value: "Center", label: "Center" },
+  { value: "Non-member", label: "Non-member" }
+] as const;
+
 const DISCOUNT_OPTIONS: Array<{ label: string; value: number }> = [
   { label: "No Discount", value: 0 },
   { label: "\u20B150", value: 50 },
@@ -138,15 +146,22 @@ function requiresCardType(mode: string) {
 
 function normalizeMemberType(value: string): SaleEntry["memberType"] {
   const normalized = value.trim().toLowerCase();
-  if (
-    normalized === "distributor" ||
-    normalized === "platinum" ||
-    normalized === "gold" ||
-    normalized === "silver"
-  ) {
-    return normalized;
-  }
-  return "";
+  if (!normalized) return "";
+
+  const normalizedMap: Record<string, string> = {
+    distributor: "distributor",
+    "mobile stockist": "mobile stockist",
+    "city stockist": "city stockist",
+    center: "center",
+    "non-member": "non-member",
+    // Legacy values kept for safe edit/load compatibility.
+    platinum: "platinum",
+    gold: "gold",
+    silver: "silver",
+    discount: "discount"
+  };
+
+  return normalizedMap[normalized] ?? normalized;
 }
 
 function mapPayment(mode: SplitPaymentMode | ""): {
@@ -638,12 +653,10 @@ export function EncoderForm({ onSave, savedCount }: EncoderFormProps) {
             label="Member Type"
             value={formData.memberType}
             onChange={(value) => handleInputChange("memberType", value)}
-            options={[
-              { value: "Distributor", label: "Distributor" },
-              { value: "Platinum", label: "Platinum" },
-              { value: "Gold", label: "Gold" },
-              { value: "Silver", label: "Silver" },
-            ]}
+            options={MEMBER_TYPE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label
+            }))}
           />
           <FormSelect
             label="Package Type"
