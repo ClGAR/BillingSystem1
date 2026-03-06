@@ -1,27 +1,45 @@
-import React, { createContext, useContext, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Navigate, Route } from "react-router-dom";
 import { SalesDashboardLayout } from "../components/SalesDashboardLayout";
 import { SalesDashboardEncoderPage } from "../components/SalesDashboardEncoderPage";
 import { SalesDashboardSalesReportPage } from "../components/SalesDashboardSalesReportPage";
 import { InventoryReportPage } from "../app/components/inventory-report-page";
 import type { SaleEntry } from "../types/sales";
+import { fetchSalesEntriesCount, saveSalesEntry } from "../services/salesDashboard.service";
 
 type SalesDashboardEntriesContextValue = {
-  salesEntries: SaleEntry[];
-  onSaveEntry: (entry: SaleEntry) => void;
+  savedCount: number;
+  onSaveEntry: (entry: SaleEntry) => Promise<void>;
 };
 
 const SalesDashboardEntriesContext = createContext<SalesDashboardEntriesContextValue | null>(null);
 
 function SalesDashboardStateShell() {
-  const [salesEntries, setSalesEntries] = useState<SaleEntry[]>([]);
+  const [savedCount, setSavedCount] = useState(0);
+
+  const refreshSavedCount = useCallback(async () => {
+    const count = await fetchSalesEntriesCount();
+    setSavedCount(count);
+  }, []);
+
+  useEffect(() => {
+    void refreshSavedCount();
+  }, [refreshSavedCount]);
+
+  const onSaveEntry = useCallback(
+    async (entry: SaleEntry) => {
+      await saveSalesEntry(entry);
+      await refreshSavedCount();
+    },
+    [refreshSavedCount]
+  );
 
   const value = useMemo<SalesDashboardEntriesContextValue>(
     () => ({
-      salesEntries,
-      onSaveEntry: (entry) => setSalesEntries((prev) => [entry, ...prev])
+      savedCount,
+      onSaveEntry
     }),
-    [salesEntries]
+    [savedCount, onSaveEntry]
   );
 
   return (
@@ -40,13 +58,12 @@ function useSalesDashboardEntries() {
 }
 
 function SalesDashboardEncoderRoute() {
-  const { salesEntries, onSaveEntry } = useSalesDashboardEntries();
-  return <SalesDashboardEncoderPage onSave={onSaveEntry} savedCount={salesEntries.length} />;
+  const { savedCount, onSaveEntry } = useSalesDashboardEntries();
+  return <SalesDashboardEncoderPage onSave={onSaveEntry} savedCount={savedCount} />;
 }
 
 function SalesDashboardSalesReportRoute() {
-  const { salesEntries } = useSalesDashboardEntries();
-  return <SalesDashboardSalesReportPage salesEntries={salesEntries} />;
+  return <SalesDashboardSalesReportPage />;
 }
 
 export const salesDashboardRoutes = (

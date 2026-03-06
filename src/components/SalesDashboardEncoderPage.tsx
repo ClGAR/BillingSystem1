@@ -3,12 +3,12 @@ import { EncoderForm } from "./sales-dashboard/EncoderForm";
 import type { SaleEntry } from "../types/sales";
 
 type SalesDashboardEncoderPageProps = {
-  onSave?: (entry: SaleEntry) => void;
+  onSave?: (entry: SaleEntry) => Promise<void> | void;
   savedCount?: number;
 };
 
 export function SalesDashboardEncoderPage({
-  onSave = () => {},
+  onSave = async () => {},
   savedCount = 0,
 }: SalesDashboardEncoderPageProps) {
   return (

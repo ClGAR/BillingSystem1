@@ -21,7 +21,7 @@ type PaymentMode = (typeof PAYMENT_MODES)[number];
 type SplitPaymentMode = (typeof SPLIT_PAYMENT_MODES)[number];
 
 type EncoderFormProps = {
-  onSave: (entry: SaleEntry) => void;
+  onSave: (entry: SaleEntry) => Promise<void> | void;
   savedCount: number;
 };
 
@@ -252,6 +252,7 @@ export function EncoderForm({ onSave, savedCount }: EncoderFormProps) {
   const [isRemarksFocused, setIsRemarksFocused] = useState(false);
   const [isSaveHovered, setIsSaveHovered] = useState(false);
   const [isClearHovered, setIsClearHovered] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleInputChange = (field: keyof FormData, value: string) => {
     if (field === "event" || field === "originalPrice" || field === "priceAfterDiscount") {
@@ -340,7 +341,9 @@ export function EncoderForm({ onSave, savedCount }: EncoderFormProps) {
     setFormData(initialFormData);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (isSaving) return;
+
     const pofNumber = formatPofForSave(formData.pofDigits);
     if (!pofNumber) {
       alert("POF Number must contain exactly 9 digits.");
@@ -455,9 +458,17 @@ export function EncoderForm({ onSave, savedCount }: EncoderFormProps) {
       collectedBy: formData.collectedBy,
     };
 
-    onSave(entry);
-    alert("Entry saved successfully!");
-    handleClear();
+    try {
+      setIsSaving(true);
+      await onSave(entry);
+      alert("Entry saved successfully!");
+      handleClear();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save entry.";
+      alert(message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -937,23 +948,27 @@ export function EncoderForm({ onSave, savedCount }: EncoderFormProps) {
         <div className="flex flex-row gap-3 pt-4">
           <button
             type="button"
+            disabled={isSaving}
             onClick={handleSave}
             onMouseEnter={() => setIsSaveHovered(true)}
             onMouseLeave={() => setIsSaveHovered(false)}
             style={{
               ...actionButtonStyle,
+              opacity: isSaving ? 0.7 : 1,
               backgroundColor: isSaveHovered ? "#16A34A" : "#22C55E",
             }}
           >
-            Save Entry
+            {isSaving ? "Saving..." : "Save Entry"}
           </button>
           <button
             type="button"
+            disabled={isSaving}
             onClick={handleClear}
             onMouseEnter={() => setIsClearHovered(true)}
             onMouseLeave={() => setIsClearHovered(false)}
             style={{
               ...actionButtonStyle,
+              opacity: isSaving ? 0.7 : 1,
               backgroundColor: isClearHovered ? "#DC2626" : "#EF4444",
             }}
           >

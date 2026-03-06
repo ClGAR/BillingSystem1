@@ -1,5 +1,9 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Printer } from "lucide-react";
+import {
+  fetchInventoryReportRows,
+  type SalesDashboardRawRow
+} from "../../services/salesDashboard.service";
 
 interface InventoryItem {
   name: string;
@@ -14,84 +18,110 @@ interface InventoryItem {
   amount: number;
 }
 
-const inventoryData: InventoryItem[] = [
-  {
-    name: "Juan Dela Cruz",
-    ggTrans: "GG-2024-001",
-    pofNumber: "POF-12345",
-    packageType: { plat: 1, gold: 0, silver: 0 },
-    retail: { bottle: 2, blister: 5, voucher: 0, discount: 0 },
-    bottles: 15,
-    blisters: 30,
-    released: { bottle: 10, blister: 20 },
-    toFollow: { bottle: 5, blister: 10 },
-    amount: 125000,
-  },
-  {
-    name: "Maria Santos",
-    ggTrans: "GG-2024-002",
-    pofNumber: "POF-12346",
-    packageType: { plat: 0, gold: 1, silver: 0 },
-    retail: { bottle: 3, blister: 8, voucher: 1, discount: 0 },
-    bottles: 20,
-    blisters: 40,
-    released: { bottle: 15, blister: 30 },
-    toFollow: { bottle: 5, blister: 10 },
-    amount: 85000,
-  },
-  {
-    name: "Pedro Reyes",
-    ggTrans: "GG-2024-003",
-    pofNumber: "POF-12347",
-    packageType: { plat: 0, gold: 0, silver: 2 },
-    retail: { bottle: 1, blister: 3, voucher: 0, discount: 1 },
-    bottles: 12,
-    blisters: 25,
-    released: { bottle: 8, blister: 18 },
-    toFollow: { bottle: 4, blister: 7 },
-    amount: 52000,
-  },
-  {
-    name: "Anna Garcia",
-    ggTrans: "GG-2024-004",
-    pofNumber: "POF-12348",
-    packageType: { plat: 1, gold: 0, silver: 0 },
-    retail: { bottle: 4, blister: 10, voucher: 2, discount: 0 },
-    bottles: 25,
-    blisters: 50,
-    released: { bottle: 20, blister: 40 },
-    toFollow: { bottle: 5, blister: 10 },
-    amount: 145000,
-  },
-  {
-    name: "Luis Mendoza",
-    ggTrans: "GG-2024-005",
-    pofNumber: "POF-12349",
-    packageType: { plat: 0, gold: 1, silver: 1 },
-    retail: { bottle: 2, blister: 6, voucher: 0, discount: 1 },
-    bottles: 18,
-    blisters: 35,
-    released: { bottle: 12, blister: 25 },
-    toFollow: { bottle: 6, blister: 10 },
-    amount: 95000,
-  },
-];
-
 const formatCurrency = (amount: number): string =>
   new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(amount);
 
 const renderDashForZero = (value: number): number | string => (value === 0 ? "-" : value);
 
+const toNumber = (value: unknown): number => {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/,/g, ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
+
+const pickString = (row: SalesDashboardRawRow, keys: string[], fallback = "-"): string => {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return fallback;
+};
+
+const pickNumber = (row: SalesDashboardRawRow, keys: string[]): number => {
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== undefined && value !== null) return toNumber(value);
+  }
+  return 0;
+};
+
+const mapRowToInventoryItem = (row: SalesDashboardRawRow): InventoryItem => ({
+  name: pickString(row, ["member_name", "name", "full_name"]),
+  ggTrans: pickString(row, ["gg_trans_no", "gg_trans", "gg_transaction_no", "gg_transaction"]),
+  pofNumber: pickString(row, ["pof_number", "pgf_number", "pof", "pgf"]),
+  packageType: {
+    plat: pickNumber(row, ["package_plat", "plat", "package_platinum", "platinum_qty"]),
+    gold: pickNumber(row, ["package_gold", "gold", "gold_qty"]),
+    silver: pickNumber(row, ["package_silver", "silver", "silver_qty"])
+  },
+  retail: {
+    bottle: pickNumber(row, ["retail_bottle", "bottle", "retail_bottle_qty"]),
+    blister: pickNumber(row, ["retail_blister", "blister", "retail_blister_qty"]),
+    voucher: pickNumber(row, ["retail_voucher", "voucher"]),
+    discount: pickNumber(row, ["retail_discount", "discount"])
+  },
+  bottles: pickNumber(row, ["bottles", "total_bottles"]),
+  blisters: pickNumber(row, ["blisters", "total_blisters"]),
+  released: {
+    bottle: pickNumber(row, ["released_bottles", "released_bottle"]),
+    blister: pickNumber(row, ["released_blisters", "released_blister"])
+  },
+  toFollow: {
+    bottle: pickNumber(row, ["to_follow_bottles", "to_follow_bottle"]),
+    blister: pickNumber(row, ["to_follow_blisters", "to_follow_blister"])
+  },
+  amount: pickNumber(row, ["amount", "total_amount", "amount_total", "total_sales"])
+});
+
 export function InventoryReportPage() {
-  const [isPrintHovered, setIsPrintHovered] = React.useState(false);
+  const [isPrintHovered, setIsPrintHovered] = useState(false);
+  const [inventoryData, setInventoryData] = useState<InventoryItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const today = new Date().toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const today = useMemo(
+    () =>
+      new Date().toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric"
+      }),
+    []
+  );
 
-  const totalAmount = inventoryData.reduce((sum, item) => sum + item.amount, 0);
+  const totalAmount = useMemo(
+    () => inventoryData.reduce((sum, item) => sum + item.amount, 0),
+    [inventoryData]
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    const loadInventoryRows = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const rows = await fetchInventoryReportRows();
+        if (!active) return;
+        setInventoryData(rows.map(mapRowToInventoryItem));
+      } catch (fetchError) {
+        if (!active) return;
+        const message =
+          fetchError instanceof Error ? fetchError.message : "Failed to load inventory report.";
+        setError(message);
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    };
+
+    void loadInventoryRows();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div style={{ fontFamily: "Inter, sans-serif" }}>
@@ -121,7 +151,7 @@ export function InventoryReportPage() {
           style={{
             color: "#2E3A8C",
             fontSize: "20px",
-            fontWeight: 500,
+            fontWeight: 500
           }}
         >
           Inventory Report
@@ -136,13 +166,13 @@ export function InventoryReportPage() {
             backgroundColor: isPrintHovered ? "#1F2870" : "#2E3A8C",
             color: "#FFFFFF",
             height: "44px",
-            borderRadius: "8px",
+            borderRadius: "8px"
           }}
         >
           <Printer className="w-5 h-5" />
           <span
             style={{
-              fontSize: "14px",
+              fontSize: "14px"
             }}
           >
             Print Report
@@ -156,7 +186,7 @@ export function InventoryReportPage() {
             style={{
               color: "#2E3A8C",
               fontSize: "24px",
-              marginBottom: "8px",
+              marginBottom: "8px"
             }}
           >
             Company Name
@@ -165,7 +195,7 @@ export function InventoryReportPage() {
             style={{
               color: "#374151",
               fontSize: "20px",
-              marginBottom: "8px",
+              marginBottom: "8px"
             }}
           >
             Inventory Report
@@ -173,7 +203,7 @@ export function InventoryReportPage() {
           <p
             style={{
               color: "#6B7280",
-              fontSize: "14px",
+              fontSize: "14px"
             }}
           >
             Report Date: {today}
@@ -299,61 +329,85 @@ export function InventoryReportPage() {
               </tr>
             </thead>
             <tbody>
-              {inventoryData.map((item) => (
-                <tr key={item.ggTrans} className="border-t" style={{ borderColor: "#E5E7EB" }}>
-                  <td className="px-3 py-3 text-left" style={{ fontSize: "12px" }}>
-                    {item.name}
-                  </td>
-                  <td className="px-3 py-3 text-left" style={{ fontSize: "12px" }}>
-                    {item.ggTrans}
-                  </td>
-                  <td className="px-3 py-3 text-left" style={{ fontSize: "12px" }}>
-                    {item.pofNumber}
-                  </td>
-                  <td className="px-3 py-3 text-center" style={{ fontSize: "12px", borderLeft: "1px solid #E5E7EB" }}>
-                    {renderDashForZero(item.packageType.plat)}
-                  </td>
-                  <td className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
-                    {renderDashForZero(item.packageType.gold)}
-                  </td>
-                  <td className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
-                    {renderDashForZero(item.packageType.silver)}
-                  </td>
-                  <td className="px-3 py-3 text-center" style={{ fontSize: "12px", borderLeft: "1px solid #E5E7EB" }}>
-                    {renderDashForZero(item.retail.bottle)}
-                  </td>
-                  <td className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
-                    {renderDashForZero(item.retail.blister)}
-                  </td>
-                  <td className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
-                    {renderDashForZero(item.retail.voucher)}
-                  </td>
-                  <td className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
-                    {renderDashForZero(item.retail.discount)}
-                  </td>
-                  <td className="px-3 py-3 text-right" style={{ fontSize: "12px", borderLeft: "1px solid #E5E7EB" }}>
-                    {item.bottles}
-                  </td>
-                  <td className="px-3 py-3 text-right" style={{ fontSize: "12px" }}>
-                    {item.blisters}
-                  </td>
-                  <td className="px-3 py-3 text-center" style={{ fontSize: "12px", borderLeft: "1px solid #E5E7EB" }}>
-                    {item.released.bottle}
-                  </td>
-                  <td className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
-                    {item.released.blister}
-                  </td>
-                  <td className="px-3 py-3 text-center" style={{ fontSize: "12px", borderLeft: "1px solid #E5E7EB" }}>
-                    {item.toFollow.bottle}
-                  </td>
-                  <td className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
-                    {item.toFollow.blister}
-                  </td>
-                  <td className="px-3 py-3 text-right" style={{ fontSize: "12px", borderLeft: "1px solid #E5E7EB" }}>
-                    {formatCurrency(item.amount)}
+              {isLoading ? (
+                <tr>
+                  <td colSpan={17} className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
+                    Loading inventory report...
                   </td>
                 </tr>
-              ))}
+              ) : error ? (
+                <tr>
+                  <td
+                    colSpan={17}
+                    className="px-3 py-3 text-center"
+                    style={{ fontSize: "12px", color: "#B91C1C" }}
+                  >
+                    {error}
+                  </td>
+                </tr>
+              ) : inventoryData.length === 0 ? (
+                <tr>
+                  <td colSpan={17} className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
+                    No inventory records found.
+                  </td>
+                </tr>
+              ) : (
+                inventoryData.map((item, index) => (
+                  <tr key={`${item.ggTrans}-${item.pofNumber}-${index}`} className="border-t" style={{ borderColor: "#E5E7EB" }}>
+                    <td className="px-3 py-3 text-left" style={{ fontSize: "12px" }}>
+                      {item.name}
+                    </td>
+                    <td className="px-3 py-3 text-left" style={{ fontSize: "12px" }}>
+                      {item.ggTrans}
+                    </td>
+                    <td className="px-3 py-3 text-left" style={{ fontSize: "12px" }}>
+                      {item.pofNumber}
+                    </td>
+                    <td className="px-3 py-3 text-center" style={{ fontSize: "12px", borderLeft: "1px solid #E5E7EB" }}>
+                      {renderDashForZero(item.packageType.plat)}
+                    </td>
+                    <td className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
+                      {renderDashForZero(item.packageType.gold)}
+                    </td>
+                    <td className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
+                      {renderDashForZero(item.packageType.silver)}
+                    </td>
+                    <td className="px-3 py-3 text-center" style={{ fontSize: "12px", borderLeft: "1px solid #E5E7EB" }}>
+                      {renderDashForZero(item.retail.bottle)}
+                    </td>
+                    <td className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
+                      {renderDashForZero(item.retail.blister)}
+                    </td>
+                    <td className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
+                      {renderDashForZero(item.retail.voucher)}
+                    </td>
+                    <td className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
+                      {renderDashForZero(item.retail.discount)}
+                    </td>
+                    <td className="px-3 py-3 text-right" style={{ fontSize: "12px", borderLeft: "1px solid #E5E7EB" }}>
+                      {item.bottles}
+                    </td>
+                    <td className="px-3 py-3 text-right" style={{ fontSize: "12px" }}>
+                      {item.blisters}
+                    </td>
+                    <td className="px-3 py-3 text-center" style={{ fontSize: "12px", borderLeft: "1px solid #E5E7EB" }}>
+                      {item.released.bottle}
+                    </td>
+                    <td className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
+                      {item.released.blister}
+                    </td>
+                    <td className="px-3 py-3 text-center" style={{ fontSize: "12px", borderLeft: "1px solid #E5E7EB" }}>
+                      {item.toFollow.bottle}
+                    </td>
+                    <td className="px-3 py-3 text-center" style={{ fontSize: "12px" }}>
+                      {item.toFollow.blister}
+                    </td>
+                    <td className="px-3 py-3 text-right" style={{ fontSize: "12px", borderLeft: "1px solid #E5E7EB" }}>
+                      {formatCurrency(item.amount)}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
             <tfoot>
               <tr style={{ borderTop: "2px solid #2E3A8C", backgroundColor: "#F0F4FF" }}>
@@ -365,7 +419,7 @@ export function InventoryReportPage() {
                   style={{
                     borderLeft: "1px solid #2E3A8C",
                     color: "#2E3A8C",
-                    fontSize: "14px",
+                    fontSize: "14px"
                   }}
                 >
                   {formatCurrency(totalAmount)}
