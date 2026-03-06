@@ -35,7 +35,15 @@ type CashDenominationRow = {
 
 type CashBreakdownMap = Record<string, { pieces: number; amount: number }>;
 
-const DATE_KEYS = ["report_date", "cash_date", "entry_date", "date", "transaction_date", "created_at"];
+const DATE_KEYS = [
+  "report_date",
+  "cash_date",
+  "entry_date",
+  "sale_date",
+  "date",
+  "transaction_date",
+  "created_at"
+];
 const isSalesReportDebugEnabled =
   import.meta.env.DEV || import.meta.env.VITE_DEBUG_SALES_REPORT === "true";
 
@@ -54,6 +62,20 @@ const toNumber = (value: unknown): number => {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
+};
+
+const toLocalDateKey = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return "";
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
 const pickString = (row: SalesDashboardRawRow, keys: string[], fallback = ""): string => {
@@ -77,14 +99,23 @@ const toSearchText = (row: SalesDashboardRawRow): string =>
     .map((value) => (typeof value === "string" ? value.toLowerCase() : String(value ?? "")))
     .join(" ");
 
-const isRowForDate = (row: SalesDashboardRawRow, reportDate: string): boolean => {
-  const value = pickString(row, DATE_KEYS);
-  if (!value) return false;
-  return value.slice(0, 10) === reportDate;
+const rowDateKey = (row: SalesDashboardRawRow): string => {
+  const value = pickString(row, DATE_KEYS, "");
+  if (!value) return "";
+  return toLocalDateKey(value);
 };
 
-const filterRowsForDate = (rows: SalesDashboardRawRow[], reportDate: string): SalesDashboardRawRow[] =>
-  rows.filter((row) => isRowForDate(row, reportDate));
+const isRowForDate = (row: SalesDashboardRawRow, reportDate: string): boolean => {
+  const rowDate = rowDateKey(row);
+  if (!rowDate) return false;
+  return rowDate === reportDate;
+};
+
+const filterRowsForDate = (rows: SalesDashboardRawRow[], reportDate: string): SalesDashboardRawRow[] => {
+  const rowsWithDate = rows.filter((row) => Boolean(rowDateKey(row)));
+  if (rowsWithDate.length === 0) return rows;
+  return rowsWithDate.filter((row) => isRowForDate(row, reportDate));
+};
 
 const hasAnyKey = (row: SalesDashboardRawRow, keys: string[]): boolean =>
   keys.some((key) => row[key] !== undefined && row[key] !== null);
@@ -197,7 +228,8 @@ function aggregateMetric(
 
   const qty = matches.reduce((sum, row) => sum + pickNumber(row, ["qty", "quantity", "count"]), 0);
   const amount = matches.reduce(
-    (sum, row) => sum + pickNumber(row, ["amount_total", "total_amount", "amount", "total", "value"]),
+    (sum, row) =>
+      sum + pickNumber(row, ["amount_total", "total_amount", "amount", "total", "value", "total_sales"]),
     0
   );
   const explicitPrice = matches.find((row) => pickNumber(row, ["price", "unit_price", "rate"]) > 0);
@@ -351,9 +383,8 @@ export function SalesDashboardSalesReportPage() {
         setCashTotalFromSource(totalFromSource);
 
         if (isSalesReportDebugEnabled) {
-          console.log("SELECTED REPORT DATE", reportDate);
-          console.log("DENOMINATION RAW DATA", dailyCashCountData);
-          console.log("SALES REPORT LOAD", {
+          console.log("SALES REPORT SELECTED DATE", reportDate);
+          console.log("SALES REPORT RAW DATA", {
             selectedDate: reportDate,
             summaryRowsRawData: summaryData,
             bankRowsRawData: bankData,
@@ -372,8 +403,8 @@ export function SalesDashboardSalesReportPage() {
       } catch (fetchError) {
         if (!active) return;
         if (isSalesReportDebugEnabled) {
-          console.error("DENOMINATION ERROR", fetchError);
-          console.log("SELECTED REPORT DATE", reportDate);
+          console.error("SALES REPORT FETCH ERROR", fetchError);
+          console.log("SALES REPORT SELECTED DATE", reportDate);
         }
         const message =
           fetchError instanceof Error ? fetchError.message : "Failed to load sales report.";
@@ -587,19 +618,53 @@ export function SalesDashboardSalesReportPage() {
   const mayaTotal = detailsTotal(mayaRows);
   const gcashTotal = detailsTotal(gcashRows);
 
-  const resolvePaymentAmount = (keys: string[], fallback: number): number => {
+  const resolvePaymentAmount = (
+    keys: string[],
+    fallback: number,
+    modeKeywords: string[] = []
+  ): number => {
     if (hasMetricKeys(summaryRows, keys)) return sumByKeys(summaryRows, keys);
+
+    if (modeKeywords.length > 0) {
+      const modeMatchedRows = summaryRows.filter((row) => {
+        const text = toSearchText(row);
+        return modeKeywords.some((keyword) => text.includes(keyword));
+      });
+
+      if (modeMatchedRows.length > 0) {
+        return modeMatchedRows.reduce(
+          (sum, row) =>
+            sum +
+            pickNumber(row, [
+              "amount_total",
+              "total_amount",
+              "amount",
+              "total",
+              "value",
+              "primary_payment_amount"
+            ]),
+          0
+        );
+      }
+    }
+
     return fallback;
   };
 
   const paymentRows = useMemo(
     () => [
-      { label: "Cash on Hand", amount: resolvePaymentAmount(["cash_total", "cash_amount"], 0) },
-      { label: "E-Wallet", amount: resolvePaymentAmount(["ewallet_total", "e_wallet_total"], 0) },
-      { label: "Bank Transfer", amount: resolvePaymentAmount(["bank_transfer_total", "bank_total"], bankTotal) },
-      { label: "Maya", amount: resolvePaymentAmount(["maya_total"], mayaTotal) },
-      { label: "GCash", amount: resolvePaymentAmount(["gcash_total"], gcashTotal) },
-      { label: "Cheque", amount: resolvePaymentAmount(["cheque_total", "check_total"], 0) }
+      { label: "Cash on Hand", amount: resolvePaymentAmount(["cash_total", "cash_amount"], 0, ["cash"]) },
+      {
+        label: "E-Wallet",
+        amount: resolvePaymentAmount(["ewallet_total", "e_wallet_total"], 0, ["ewallet", "e-wallet"])
+      },
+      {
+        label: "Bank Transfer",
+        amount: resolvePaymentAmount(["bank_transfer_total", "bank_total"], bankTotal, ["bank transfer", "bank"])
+      },
+      { label: "Maya", amount: resolvePaymentAmount(["maya_total"], mayaTotal, ["maya"]) },
+      { label: "GCash", amount: resolvePaymentAmount(["gcash_total"], gcashTotal, ["gcash"]) },
+      { label: "Cheque", amount: resolvePaymentAmount(["cheque_total", "check_total"], 0, ["cheque", "check"]) }
     ],
     [summaryRows, bankTotal, mayaTotal, gcashTotal]
   );
