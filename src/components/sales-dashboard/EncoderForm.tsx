@@ -116,6 +116,14 @@ function formatPofForSave(digits: string) {
   return `${POF_PREFIX}${raw.slice(0, 6)}-${raw.slice(6, 9)}`;
 }
 
+function getTodayLocalDate() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function requiresReference(mode: string) {
   return mode === "GCASH" || mode === "MAYA" || mode === "BANK TRANSFER" || mode === "CHECK" || mode === "CREDIT CARD";
 }
@@ -195,7 +203,7 @@ function mapSaveErrorToMessage(error: unknown): string {
 
 const initialFormData: FormData = {
   event: "Davao City",
-  date: "",
+  date: getTodayLocalDate(),
   pofDigits: "",
   memberName: "",
   username: "",

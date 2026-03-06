@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchBankTransferDetails,
   fetchGcashDetails,
@@ -27,6 +27,8 @@ type DetailRow = {
 };
 
 const DATE_KEYS = ["report_date", "entry_date", "date", "transaction_date", "created_at"];
+const isSalesReportDebugEnabled =
+  import.meta.env.DEV || import.meta.env.VITE_DEBUG_SALES_REPORT === "true";
 
 const toNumber = (value: unknown): number => {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
@@ -62,6 +64,25 @@ const isRowForDate = (row: SalesDashboardRawRow, reportDate: string): boolean =>
   const value = pickString(row, DATE_KEYS);
   if (!value) return false;
   return value.slice(0, 10) === reportDate;
+};
+
+const hasDateValue = (row: SalesDashboardRawRow): boolean =>
+  Boolean(pickString(row, DATE_KEYS, ""));
+
+const filterRowsForDate = (rows: SalesDashboardRawRow[], reportDate: string): SalesDashboardRawRow[] => {
+  const exactMatches = rows.filter((row) => isRowForDate(row, reportDate));
+  if (exactMatches.length > 0) return exactMatches;
+
+  // Backward-compatibility for legacy records saved without entry_date/report_date.
+  return rows.filter((row) => !hasDateValue(row));
+};
+
+const getLatestReportDate = (rows: SalesDashboardRawRow[]): string | null => {
+  const dates = rows
+    .map((row) => pickString(row, DATE_KEYS, "").slice(0, 10))
+    .filter((value) => Boolean(value))
+    .sort((left, right) => right.localeCompare(left));
+  return dates[0] ?? null;
 };
 
 const hasAnyKey = (row: SalesDashboardRawRow, keys: string[]): boolean =>
@@ -222,6 +243,7 @@ function TotalRow({ label, amount }: { label: string; amount: number }) {
 
 export function SalesDashboardSalesReportPage() {
   const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const hasAutoPickedDateRef = useRef(false);
   const [preparedBy, setPreparedBy] = useState("");
   const [checkedBy, setCheckedBy] = useState("");
   const [cashPieces, setCashPieces] = useState<Record<string, string>>(() =>
@@ -252,10 +274,39 @@ export function SalesDashboardSalesReportPage() {
 
         if (!active) return;
 
-        setSummaryRows(summaryData.filter((row) => isRowForDate(row, reportDate)));
-        setBankRows(mapDetailRows(bankData.filter((row) => isRowForDate(row, reportDate))));
-        setMayaRows(mapDetailRows(mayaData.filter((row) => isRowForDate(row, reportDate))));
-        setGcashRows(mapDetailRows(gcashData.filter((row) => isRowForDate(row, reportDate))));
+        const filteredSummaryRows = filterRowsForDate(summaryData, reportDate);
+        const filteredBankRows = filterRowsForDate(bankData, reportDate);
+        const filteredMayaRows = filterRowsForDate(mayaData, reportDate);
+        const filteredGcashRows = filterRowsForDate(gcashData, reportDate);
+
+        if (!hasAutoPickedDateRef.current && filteredSummaryRows.length === 0) {
+          const latestReportDate = getLatestReportDate(summaryData);
+          if (latestReportDate && latestReportDate !== reportDate) {
+            hasAutoPickedDateRef.current = true;
+            setReportDate(latestReportDate);
+            return;
+          }
+        }
+
+        setSummaryRows(filteredSummaryRows);
+        setBankRows(mapDetailRows(filteredBankRows));
+        setMayaRows(mapDetailRows(filteredMayaRows));
+        setGcashRows(mapDetailRows(filteredGcashRows));
+
+        if (isSalesReportDebugEnabled) {
+          console.log("SALES REPORT LOAD", {
+            selectedDate: reportDate,
+            summaryRowsRawData: summaryData,
+            bankRowsRawData: bankData,
+            mayaRowsRawData: mayaData,
+            gcashRowsRawData: gcashData,
+            summaryRowsRaw: summaryData.length,
+            summaryRowsFiltered: filteredSummaryRows.length,
+            bankRowsFiltered: filteredBankRows.length,
+            mayaRowsFiltered: filteredMayaRows.length,
+            gcashRowsFiltered: filteredGcashRows.length
+          });
+        }
       } catch (fetchError) {
         if (!active) return;
         const message =
@@ -534,7 +585,10 @@ export function SalesDashboardSalesReportPage() {
           <input
             type="date"
             value={reportDate}
-            onChange={(event) => setReportDate(event.target.value)}
+            onChange={(event) => {
+              hasAutoPickedDateRef.current = true;
+              setReportDate(event.target.value);
+            }}
             className="border border-black px-2 py-1 text-[11px]"
           />
         </div>

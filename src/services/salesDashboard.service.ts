@@ -18,6 +18,14 @@ const toNumber = (value: unknown): number => {
 
 const toText = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 
+const toLocalDateIso = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const toBoolean = (value: unknown): boolean | null => {
   if (typeof value === "boolean") return value;
   if (typeof value !== "string") return null;
@@ -85,7 +93,7 @@ export async function saveSalesEntry(entry: SaleEntry): Promise<void> {
 
   const [salesUserId, authUserResult] = await Promise.all([salesUserIdPromise, authUserPromise]);
   const authUserId = authUserResult.data.user?.id ?? null;
-  const saleDate = toText(entry.date) || null;
+  const saleDate = toText(entry.date) || toLocalDateIso();
   const pofNumber = toText(entry.pgfNumber) || null;
   const newMember = toBoolean(entry.newMember);
   const toBlister = toBoolean(entry.toBlister);
