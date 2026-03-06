@@ -102,6 +102,7 @@ export async function saveSalesEntry(entry: SaleEntry): Promise<void> {
   const salesEntryInsert: Record<string, unknown> = {
     event: toText(entry.event),
     // Keep both old/new column keys to support current and legacy table versions.
+    report_date: saleDate,
     entry_date: saleDate,
     sale_date: saleDate,
     pof_number: pofNumber,

@@ -75,16 +75,8 @@ const isRowForDate = (row: SalesDashboardRawRow, reportDate: string): boolean =>
   return value.slice(0, 10) === reportDate;
 };
 
-const hasDateValue = (row: SalesDashboardRawRow): boolean =>
-  Boolean(pickString(row, DATE_KEYS, ""));
-
-const filterRowsForDate = (rows: SalesDashboardRawRow[], reportDate: string): SalesDashboardRawRow[] => {
-  const exactMatches = rows.filter((row) => isRowForDate(row, reportDate));
-  if (exactMatches.length > 0) return exactMatches;
-
-  // Backward-compatibility for legacy records saved without entry_date/report_date.
-  return rows.filter((row) => !hasDateValue(row));
-};
+const filterRowsForDate = (rows: SalesDashboardRawRow[], reportDate: string): SalesDashboardRawRow[] =>
+  rows.filter((row) => isRowForDate(row, reportDate));
 
 const getLatestReportDate = (rows: SalesDashboardRawRow[]): string | null => {
   const dates = rows
@@ -350,8 +342,21 @@ export function SalesDashboardSalesReportPage() {
         const filteredGcashRows = filterRowsForDate(gcashData, reportDate);
         const filteredDailyCashRows = filterRowsForDate(dailyCashCountData, reportDate);
 
-        if (!hasAutoPickedDateRef.current && filteredSummaryRows.length === 0) {
-          const latestReportDate = getLatestReportDate(summaryData);
+        const hasAnyRowsForSelectedDate =
+          filteredSummaryRows.length > 0 ||
+          filteredBankRows.length > 0 ||
+          filteredMayaRows.length > 0 ||
+          filteredGcashRows.length > 0 ||
+          filteredDailyCashRows.length > 0;
+
+        if (!hasAutoPickedDateRef.current && !hasAnyRowsForSelectedDate) {
+          const latestReportDate = getLatestReportDate([
+            ...summaryData,
+            ...bankData,
+            ...mayaData,
+            ...gcashData,
+            ...dailyCashCountData
+          ]);
           if (latestReportDate && latestReportDate !== reportDate) {
             hasAutoPickedDateRef.current = true;
             setReportDate(latestReportDate);
