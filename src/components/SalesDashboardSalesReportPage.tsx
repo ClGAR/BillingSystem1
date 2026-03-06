@@ -60,9 +60,18 @@ const toSearchText = (row: SalesDashboardRawRow): string =>
 
 const isRowForDate = (row: SalesDashboardRawRow, reportDate: string): boolean => {
   const value = pickString(row, DATE_KEYS);
-  if (!value) return true;
+  if (!value) return false;
   return value.slice(0, 10) === reportDate;
 };
+
+const hasAnyKey = (row: SalesDashboardRawRow, keys: string[]): boolean =>
+  keys.some((key) => row[key] !== undefined && row[key] !== null);
+
+const hasMetricKeys = (rows: SalesDashboardRawRow[], keys: string[]): boolean =>
+  rows.some((row) => hasAnyKey(row, keys));
+
+const sumByKeys = (rows: SalesDashboardRawRow[], keys: string[]): number =>
+  rows.reduce((sum, row) => sum + pickNumber(row, keys), 0);
 
 const mapDetailRows = (rows: SalesDashboardRawRow[]): DetailRow[] =>
   rows.map((row) => ({
@@ -130,6 +139,46 @@ function aggregateWithFallback(
   const sectionScoped = aggregateMetric(rows, itemKeywords, { sectionKeywords, fallbackPrice });
   if (sectionScoped.matched) return sectionScoped;
   return aggregateMetric(rows, itemKeywords, { fallbackPrice });
+}
+
+function resolveMetricRow(
+  rows: SalesDashboardRawRow[],
+  config: {
+    qtyKeys: string[];
+    amountKeys?: string[];
+    fallbackPrice: number;
+    fallbackKeywords: string[];
+    fallbackSectionKeywords: string[];
+  }
+): Omit<MetricResult, "matched"> {
+  const qty = sumByKeys(rows, config.qtyKeys);
+  const hasQtyColumns = hasMetricKeys(rows, config.qtyKeys);
+  const amountKeys = config.amountKeys ?? [];
+  const hasAmountColumns = amountKeys.length > 0 && hasMetricKeys(rows, amountKeys);
+  const amountFromColumns = amountKeys.length > 0 ? sumByKeys(rows, amountKeys) : 0;
+
+  if (hasQtyColumns || hasAmountColumns) {
+    const amount =
+      hasAmountColumns && amountFromColumns > 0 ? amountFromColumns : qty * config.fallbackPrice;
+    return {
+      qty,
+      price: config.fallbackPrice,
+      amount
+    };
+  }
+
+  const fallback = aggregateWithFallback(
+    rows,
+    config.fallbackKeywords,
+    config.fallbackSectionKeywords,
+    config.fallbackPrice
+  );
+
+  return {
+    qty: fallback.qty,
+    price: fallback.price,
+    amount: fallback.amount
+  };
 }
 
 function SalesTableHeader({ cols }: { cols: string[] }) {
@@ -224,95 +273,176 @@ export function SalesDashboardSalesReportPage() {
   }, [reportDate]);
 
   const packageSectionRows = useMemo(() => {
-    const section = ["package sales", "member type"];
     return [
       {
         label: "Mobile Stockist",
-        ...aggregateWithFallback(summaryRows, ["mobile stockist"], section, 0)
+        ...resolveMetricRow(summaryRows, {
+          qtyKeys: ["mobile_stockist_qty", "mobile_stockist_total_qty", "mobile_stockist_silver_qty"],
+          amountKeys: ["mobile_stockist_total", "mobile_stockist_amount", "mobile_stockist_package_total"],
+          fallbackPrice: 0,
+          fallbackKeywords: ["mobile stockist"],
+          fallbackSectionKeywords: ["package sales", "member type"]
+        })
       },
       {
         label: "Platinum",
-        ...aggregateWithFallback(summaryRows, ["platinum"], section, DEFAULT_PRICE.platinum)
+        ...resolveMetricRow(summaryRows, {
+          qtyKeys: ["platinum_qty", "package_platinum_qty", "package_platinum"],
+          amountKeys: ["platinum_total", "platinum_amount"],
+          fallbackPrice: DEFAULT_PRICE.platinum,
+          fallbackKeywords: ["platinum"],
+          fallbackSectionKeywords: ["package sales", "member type"]
+        })
       },
       {
         label: "Gold",
-        ...aggregateWithFallback(summaryRows, ["gold"], section, DEFAULT_PRICE.gold)
+        ...resolveMetricRow(summaryRows, {
+          qtyKeys: ["gold_qty", "package_gold_qty", "package_gold"],
+          amountKeys: ["gold_total", "gold_amount"],
+          fallbackPrice: DEFAULT_PRICE.gold,
+          fallbackKeywords: ["gold"],
+          fallbackSectionKeywords: ["package sales", "member type"]
+        })
       },
       {
         label: "Silver",
-        ...aggregateWithFallback(summaryRows, ["silver"], section, DEFAULT_PRICE.silver)
+        ...resolveMetricRow(summaryRows, {
+          qtyKeys: ["silver_qty", "package_silver_qty", "package_silver"],
+          amountKeys: ["silver_total", "silver_amount"],
+          fallbackPrice: DEFAULT_PRICE.silver,
+          fallbackKeywords: ["silver"],
+          fallbackSectionKeywords: ["package sales", "member type"]
+        })
       }
     ];
   }, [summaryRows]);
 
   const mobileStockistPackageRows = useMemo(() => {
-    const section = ["mobile stockist package"];
     return [
       {
         label: "Platinum",
-        ...aggregateWithFallback(summaryRows, ["platinum"], section, DEFAULT_PRICE.platinum)
+        ...resolveMetricRow(summaryRows, {
+          qtyKeys: ["mobile_stockist_platinum_qty"],
+          amountKeys: ["mobile_stockist_platinum_total", "mobile_stockist_platinum_amount"],
+          fallbackPrice: DEFAULT_PRICE.platinum,
+          fallbackKeywords: ["platinum"],
+          fallbackSectionKeywords: ["mobile stockist package"]
+        })
       },
       {
         label: "Gold",
-        ...aggregateWithFallback(summaryRows, ["gold"], section, DEFAULT_PRICE.gold)
+        ...resolveMetricRow(summaryRows, {
+          qtyKeys: ["mobile_stockist_gold_qty"],
+          amountKeys: ["mobile_stockist_gold_total", "mobile_stockist_gold_amount"],
+          fallbackPrice: DEFAULT_PRICE.gold,
+          fallbackKeywords: ["gold"],
+          fallbackSectionKeywords: ["mobile stockist package"]
+        })
       },
       {
         label: "Silver",
-        ...aggregateWithFallback(summaryRows, ["silver"], section, DEFAULT_PRICE.silver)
+        ...resolveMetricRow(summaryRows, {
+          qtyKeys: ["mobile_stockist_silver_qty"],
+          amountKeys: ["mobile_stockist_silver_total", "mobile_stockist_silver_amount"],
+          fallbackPrice: DEFAULT_PRICE.silver,
+          fallbackKeywords: ["silver"],
+          fallbackSectionKeywords: ["mobile stockist package"]
+        })
       }
     ];
   }, [summaryRows]);
 
   const depotPackageRows = useMemo(() => {
-    const section = ["depot packs", "depot package", "depot pack"];
     return [
       {
         label: "Platinum",
-        ...aggregateWithFallback(summaryRows, ["platinum"], section, DEFAULT_PRICE.platinum)
+        ...resolveMetricRow(summaryRows, {
+          qtyKeys: ["depot_platinum_qty"],
+          amountKeys: ["depot_platinum_total", "depot_platinum_amount"],
+          fallbackPrice: DEFAULT_PRICE.platinum,
+          fallbackKeywords: ["platinum"],
+          fallbackSectionKeywords: ["depot packs", "depot package", "depot pack"]
+        })
       },
       {
         label: "Gold",
-        ...aggregateWithFallback(summaryRows, ["gold"], section, DEFAULT_PRICE.gold)
+        ...resolveMetricRow(summaryRows, {
+          qtyKeys: ["depot_gold_qty"],
+          amountKeys: ["depot_gold_total", "depot_gold_amount"],
+          fallbackPrice: DEFAULT_PRICE.gold,
+          fallbackKeywords: ["gold"],
+          fallbackSectionKeywords: ["depot packs", "depot package", "depot pack"]
+        })
       },
       {
         label: "Silver",
-        ...aggregateWithFallback(summaryRows, ["silver"], section, DEFAULT_PRICE.silver)
+        ...resolveMetricRow(summaryRows, {
+          qtyKeys: ["depot_silver_qty"],
+          amountKeys: ["depot_silver_total", "depot_silver_amount"],
+          fallbackPrice: DEFAULT_PRICE.silver,
+          fallbackKeywords: ["silver"],
+          fallbackSectionKeywords: ["depot packs", "depot package", "depot pack"]
+        })
       }
     ];
   }, [summaryRows]);
 
   const retailRows = useMemo(() => {
-    const section = ["retail"];
     return [
       {
         label: "Synbiotic+ (Bottle)",
-        ...aggregateWithFallback(summaryRows, ["bottle"], section, DEFAULT_PRICE.bottle)
+        ...resolveMetricRow(summaryRows, {
+          qtyKeys: ["retail_bottle_qty", "retail_bottles", "bottle_qty"],
+          amountKeys: ["retail_bottle_total", "retail_bottle_amount"],
+          fallbackPrice: DEFAULT_PRICE.bottle,
+          fallbackKeywords: ["bottle"],
+          fallbackSectionKeywords: ["retail"]
+        })
       },
       {
         label: "Synbiotic+ (Blister)",
-        ...aggregateWithFallback(summaryRows, ["blister"], section, DEFAULT_PRICE.blister)
+        ...resolveMetricRow(summaryRows, {
+          qtyKeys: ["retail_blister_qty", "retail_blisters", "blister_qty"],
+          amountKeys: ["retail_blister_total", "retail_blister_amount"],
+          fallbackPrice: DEFAULT_PRICE.blister,
+          fallbackKeywords: ["blister"],
+          fallbackSectionKeywords: ["retail"]
+        })
       },
       {
         label: "Employee Discount",
-        ...aggregateWithFallback(summaryRows, ["employee discount"], section, 0)
+        ...resolveMetricRow(summaryRows, {
+          qtyKeys: ["employee_discount_qty", "retail_discount_qty", "discount_qty"],
+          amountKeys: ["employee_discount_total", "retail_discount_total", "discount_total"],
+          fallbackPrice: 0,
+          fallbackKeywords: ["employee discount"],
+          fallbackSectionKeywords: ["retail"]
+        })
       }
     ];
   }, [summaryRows]);
 
   const mobileStockistRetailRow = useMemo(
     () =>
-      aggregateWithFallback(
-        summaryRows,
-        ["mobile stockist retail", "bottle"],
-        ["mobile stockist retail"],
-        DEFAULT_PRICE.bottle
-      ),
+      resolveMetricRow(summaryRows, {
+        qtyKeys: ["mobile_stockist_retail_bottle_qty"],
+        amountKeys: ["mobile_stockist_retail_bottle_total", "mobile_stockist_retail_total"],
+        fallbackPrice: DEFAULT_PRICE.bottle,
+        fallbackKeywords: ["mobile stockist retail", "bottle"],
+        fallbackSectionKeywords: ["mobile stockist retail"]
+      }),
     [summaryRows]
   );
 
   const depotRetailRow = useMemo(
     () =>
-      aggregateWithFallback(summaryRows, ["depot retail", "bottle"], ["depot retail"], DEFAULT_PRICE.bottle),
+      resolveMetricRow(summaryRows, {
+        qtyKeys: ["depot_retail_bottle_qty"],
+        amountKeys: ["depot_retail_bottle_total", "depot_retail_total"],
+        fallbackPrice: DEFAULT_PRICE.bottle,
+        fallbackKeywords: ["depot retail", "bottle"],
+        fallbackSectionKeywords: ["depot retail"]
+      }),
     [summaryRows]
   );
 
@@ -324,38 +454,35 @@ export function SalesDashboardSalesReportPage() {
   const retailTotal = sumAmount(retailRows);
   const mobileStockistRetailTotal = mobileStockistRetailRow.amount;
   const depotRetailTotal = depotRetailRow.amount;
-  const grandTotal =
+  const fallbackGrandTotal =
     packageSalesTotal +
     mobileStockistPackageTotal +
     depotPackageTotal +
     retailTotal +
     mobileStockistRetailTotal +
     depotRetailTotal;
+  const grandTotal = hasMetricKeys(summaryRows, ["gross_total_sales"])
+    ? sumByKeys(summaryRows, ["gross_total_sales"])
+    : fallbackGrandTotal;
 
   const detailsTotal = (rows: DetailRow[]) => rows.reduce((sum, row) => sum + row.amount, 0);
   const bankTotal = detailsTotal(bankRows);
   const mayaTotal = detailsTotal(mayaRows);
   const gcashTotal = detailsTotal(gcashRows);
 
-  const resolvePaymentAmount = (keywords: string[], fallback: number): number => {
-    const matched = summaryRows.filter((row) =>
-      keywords.some((keyword) => toSearchText(row).includes(keyword))
-    );
-    if (!matched.length) return fallback;
-    return matched.reduce(
-      (sum, row) => sum + pickNumber(row, ["amount_total", "total_amount", "amount", "total", "value"]),
-      0
-    );
+  const resolvePaymentAmount = (keys: string[], fallback: number): number => {
+    if (hasMetricKeys(summaryRows, keys)) return sumByKeys(summaryRows, keys);
+    return fallback;
   };
 
   const paymentRows = useMemo(
     () => [
-      { label: "Cash on Hand", amount: resolvePaymentAmount(["cash on hand", "cash"], 0) },
-      { label: "E-Wallet", amount: resolvePaymentAmount(["e-wallet", "ewallet"], 0) },
-      { label: "Bank Transfer", amount: resolvePaymentAmount(["bank transfer", "bank"], bankTotal) },
-      { label: "Maya", amount: resolvePaymentAmount(["maya"], mayaTotal) },
-      { label: "GCash", amount: resolvePaymentAmount(["gcash"], gcashTotal) },
-      { label: "Cheque", amount: resolvePaymentAmount(["cheque", "check"], 0) }
+      { label: "Cash on Hand", amount: resolvePaymentAmount(["cash_total", "cash_amount"], 0) },
+      { label: "E-Wallet", amount: resolvePaymentAmount(["ewallet_total", "e_wallet_total"], 0) },
+      { label: "Bank Transfer", amount: resolvePaymentAmount(["bank_transfer_total", "bank_total"], bankTotal) },
+      { label: "Maya", amount: resolvePaymentAmount(["maya_total"], mayaTotal) },
+      { label: "GCash", amount: resolvePaymentAmount(["gcash_total"], gcashTotal) },
+      { label: "Cheque", amount: resolvePaymentAmount(["cheque_total", "check_total"], 0) }
     ],
     [summaryRows, bankTotal, mayaTotal, gcashTotal]
   );
