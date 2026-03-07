@@ -221,6 +221,7 @@ function mapSaveErrorToMessage(error: unknown): string {
     message?: string;
     details?: string;
     status?: number;
+    saveStep?: string | null;
   };
 
   const joined = [saveError.message, saveError.details]
@@ -287,6 +288,12 @@ function mapSaveErrorToMessage(error: unknown): string {
 
   if (saveError.message && /users_directory/i.test(saveError.message)) {
     return "Unable to save entry because the Users directory table is missing. Run the latest database migration first.";
+  }
+
+  if (saveError.message) {
+    const stepLabel = saveError.saveStep ? ` during ${saveError.saveStep}` : "";
+    const details = saveError.details ? ` ${saveError.details}` : "";
+    return `Unable to save entry${stepLabel}: ${saveError.message}.${details}`.trim();
   }
 
   return fallback;

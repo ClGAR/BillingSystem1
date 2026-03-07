@@ -342,12 +342,13 @@ export async function saveSalesEntry(entry: SaleEntry): Promise<void> {
       });
     }
   } catch (error) {
-    console.error("SAVE ERROR", {
+    const debugMeta = {
       step: failedStep,
       table: failedStep,
       salesEntryId,
       error: toErrorDebugMeta(error)
-    });
+    };
+    console.error("SAVE ERROR", debugMeta);
 
     if (salesEntryId !== null) {
       const paymentDeleteFilter = `sales_entry_id.eq.${salesEntryId},sale_entry_id.eq.${salesEntryId}`;
@@ -355,6 +356,13 @@ export async function saveSalesEntry(entry: SaleEntry): Promise<void> {
       await supabase.from("sales_entry_payments").delete().or(paymentDeleteFilter);
       await supabase.from("sales_entry_inventory").delete().or(paymentDeleteFilter);
       await supabase.from("sales_entries").delete().eq("id", salesEntryId);
+    }
+
+    if (error && typeof error === "object") {
+      Object.assign(error as Record<string, unknown>, {
+        saveStep: failedStep,
+        debugMeta
+      });
     }
 
     throw error;
