@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { printElementById } from "../print/printReport";
+import { printHtmlDocument } from "../print/printReport";
 import {
   fetchBankTransferDetails,
   fetchDailyCashCountRows,
@@ -26,94 +26,84 @@ const DEFAULT_PRICE = {
 };
 
 const SALES_REPORT_PRINT_CSS = `
-  #sales-report-print {
-    background: #ffffff !important;
-    color: #000000 !important;
-    font-size: 9px !important;
-    line-height: 1.05 !important;
-    zoom: 0.82;
+  .sales-print {
+    width: 100%;
+    color: #000;
+    font-size: 9px;
+    line-height: 1.1;
   }
-  #sales-report-print .grid {
-    display: grid !important;
+  .sales-print__frame {
+    border: 1px solid #000;
+    padding: 4px;
   }
-  #sales-report-print .grid-cols-2 {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  .sales-print__header {
+    text-align: center;
+    margin-bottom: 4px;
   }
-  #sales-report-print .gap-3 {
-    gap: 0.45rem !important;
+  .sales-print__header-title {
+    font-weight: 700;
   }
-  #sales-report-print .gap-8 {
-    gap: 1rem !important;
+  .sales-print__header-subtitle {
+    font-weight: 700;
   }
-  #sales-report-print .space-y-2 > * + * {
-    margin-top: 0.25rem !important;
+  .sales-print__columns {
+    display: grid;
+    grid-template-columns: 58% 42%;
+    gap: 4px;
+    align-items: start;
   }
-  #sales-report-print .mt-3 {
-    margin-top: 0.35rem !important;
+  .sales-print__stack > * + * {
+    margin-top: 4px;
   }
-  #sales-report-print .mt-4 {
-    margin-top: 0.5rem !important;
+  .sales-print table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
   }
-  #sales-report-print .w-full {
-    width: 100% !important;
+  .sales-print th,
+  .sales-print td {
+    border: 1px solid #000;
+    padding: 2px 4px;
+    font-size: 9px;
+    line-height: 1.1;
+    vertical-align: top;
   }
-  #sales-report-print .text-center {
-    text-align: center !important;
+  .sales-print th {
+    font-weight: 700;
+    background: #f2f2f2;
   }
-  #sales-report-print .text-right {
-    text-align: right !important;
+  .sales-print .text-left {
+    text-align: left;
   }
-  #sales-report-print .font-bold {
-    font-weight: 700 !important;
+  .sales-print .text-right {
+    text-align: right;
   }
-  #sales-report-print table {
-    width: 100% !important;
-    border-collapse: collapse !important;
+  .sales-print .text-center {
+    text-align: center;
   }
-  #sales-report-print th,
-  #sales-report-print td {
-    vertical-align: top !important;
-    padding: 2px 3px !important;
-    font-size: 9px !important;
-    line-height: 1.05 !important;
+  .sales-print .font-bold {
+    font-weight: 700;
   }
-  #sales-report-print input {
-    color: #000000 !important;
-    background: transparent !important;
-    margin-top: 0.2rem !important;
-    padding-top: 0 !important;
-    padding-bottom: 0 !important;
-    min-height: 18px !important;
-    line-height: 1 !important;
+  .sales-print__detail-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 4px;
+    margin-top: 4px;
   }
-  #sales-report-print .border {
-    border-color: #000000 !important;
+  .sales-print__footer {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 6px;
   }
-  #sales-report-print .rounded-md {
-    border-radius: 0 !important;
+  .sales-print__line-label {
+    margin-bottom: 12px;
   }
-  #sales-report-print .p-2 {
-    padding: 0.35rem !important;
-  }
-  #sales-report-print .p-3 {
-    padding: 0.4rem !important;
-  }
-  #sales-report-print .py-6 {
-    padding-top: 0.5rem !important;
-    padding-bottom: 0.5rem !important;
-  }
-  #sales-report-print .mb-3 {
-    margin-bottom: 0.35rem !important;
-  }
-  #sales-report-print .mt-2 {
-    margin-top: 0.2rem !important;
-  }
-  @supports not (zoom: 1) {
-    #sales-report-print {
-      transform: scale(0.82);
-      transform-origin: top left;
-      width: 122%;
-    }
+  .sales-print__line {
+    border-top: 1px solid #000;
+    padding-top: 3px;
+    text-align: center;
+    min-height: 14px;
   }
 `;
 
@@ -730,6 +720,166 @@ function TotalRow({ label, amount }: { label: string; amount: number }) {
   );
 }
 
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const renderPrintMetricTable = (
+  title: string,
+  rows: Array<{ label: string; qty: number; price: number; amount: number }>,
+  totalLabel: string,
+  totalAmount: number
+): string => `
+  <table>
+    <thead>
+      <tr>
+        <th class="text-left">${escapeHtml(title)}</th>
+        <th class="text-right">QTY</th>
+        <th class="text-right">PRICE</th>
+        <th class="text-right">AMOUNT TOTAL</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows
+        .map(
+          (row) => `
+            <tr>
+              <td>${escapeHtml(row.label)}</td>
+              <td class="text-right">${row.qty}</td>
+              <td class="text-right">${formatMoney(row.price)}</td>
+              <td class="text-right">${formatMoney(row.amount)}</td>
+            </tr>
+          `
+        )
+        .join("")}
+      <tr>
+        <td class="font-bold" colspan="3">${escapeHtml(totalLabel)}</td>
+        <td class="text-right font-bold">${formatMoney(totalAmount)}</td>
+      </tr>
+    </tbody>
+  </table>
+`;
+
+const renderPrintPaymentTable = (
+  rows: Array<{ label: string; amount: number }>
+): string => `
+  <table>
+    <thead>
+      <tr>
+        <th class="text-left">PAYMENT METHOD</th>
+        <th class="text-right">AMOUNT</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows
+        .map(
+          (row) => `
+            <tr>
+              <td>${escapeHtml(row.label)}</td>
+              <td class="text-right">${formatMoney(row.amount)}</td>
+            </tr>
+          `
+        )
+        .join("")}
+    </tbody>
+  </table>
+`;
+
+const renderPrintDenominationTable = (
+  rows: CashDenominationRow[],
+  totalCash: number
+): string => `
+  <table>
+    <thead>
+      <tr>
+        <th class="text-left">DENOMINATION</th>
+        <th class="text-right">PIECES</th>
+        <th class="text-right">AMOUNT</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows
+        .map(
+          (row) => `
+            <tr>
+              <td>${escapeHtml(row.label)}</td>
+              <td class="text-right">${row.pieces}</td>
+              <td class="text-right">${formatMoney(row.amount)}</td>
+            </tr>
+          `
+        )
+        .join("")}
+      <tr>
+        <td class="font-bold" colspan="2">Total Cash</td>
+        <td class="text-right font-bold">${formatMoney(totalCash)}</td>
+      </tr>
+    </tbody>
+  </table>
+`;
+
+const renderPrintSimpleCountTable = (
+  title: string,
+  rows: Array<{ label: string; value: number }>,
+  headerRight = "COUNT"
+): string => `
+  <table>
+    <thead>
+      <tr>
+        <th class="text-left">${escapeHtml(title)}</th>
+        <th class="text-right">${escapeHtml(headerRight)}</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows
+        .map(
+          (row) => `
+            <tr>
+              <td>${escapeHtml(row.label)}</td>
+              <td class="text-right">${row.value}</td>
+            </tr>
+          `
+        )
+        .join("")}
+    </tbody>
+  </table>
+`;
+
+const renderPrintDetailTable = (title: string, rows: DetailRow[]): string => {
+  const safeRows = rows.length > 0 ? rows : [{ memberName: "-", referenceNo: "-", amount: 0 }];
+
+  return `
+    <table>
+      <thead>
+        <tr>
+          <th class="text-left" colspan="3">${escapeHtml(title)}</th>
+        </tr>
+        <tr>
+          <th class="text-left">Member Name</th>
+          <th class="text-left">Reference No</th>
+          <th class="text-right">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${safeRows
+          .map(
+            (row) => `
+              <tr>
+                <td>${escapeHtml(row.memberName)}</td>
+                <td>${escapeHtml(row.referenceNo)}</td>
+                <td class="text-right">${formatMoney(row.amount)}</td>
+              </tr>
+            `
+          )
+          .join("")}
+      </tbody>
+    </table>
+  `;
+};
+
 export function SalesDashboardSalesReportPage() {
   const [reportDate, setReportDate] = useState<string>(() => getTodayLocalDate());
   const [preparedBy, setPreparedBy] = useState("");
@@ -1189,12 +1339,120 @@ export function SalesDashboardSalesReportPage() {
       ? cashOnHandAmount
       : 0);
 
+  const buildSalesReportPrintMarkup = (): string => {
+    return `
+      <div class="sales-print">
+        <div class="sales-print__frame">
+          <div class="sales-print__header">
+            <div class="sales-print__header-title">Company Name</div>
+            <div class="sales-print__header-subtitle">Daily Sales Report</div>
+            <div>Date: ${escapeHtml(reportDate)}</div>
+          </div>
+
+          <div class="sales-print__columns">
+            <div class="sales-print__stack">
+              ${renderPrintMetricTable(
+                "PACKAGE SALES (Member Type)",
+                packageSectionRows,
+                "Total Package Sales",
+                packageSalesTotal
+              )}
+              ${renderPrintMetricTable(
+                "MOBILE STOCKIST PACKAGE",
+                mobileStockistPackageRows,
+                "Total Mobile Stockist Package Sales",
+                mobileStockistPackageTotal
+              )}
+              ${renderPrintMetricTable(
+                "DEPOT PACKS",
+                depotPackageRows,
+                "Total Depot Package Sales",
+                depotPackageTotal
+              )}
+              ${renderPrintMetricTable(
+                "RETAIL ITEM",
+                retailRows,
+                "Total Retail Sales",
+                retailTotal
+              )}
+              ${renderPrintMetricTable(
+                "MOBILE STOCKIST RETAIL",
+                [{ label: "Synbiotic+ (Bottle)", ...mobileStockistRetailRow }],
+                "Total Mobile Stockist Retail Sales",
+                mobileStockistRetailTotal
+              )}
+              ${renderPrintMetricTable(
+                "DEPOT RETAIL",
+                [{ label: "Synbiotic+ (Bottle)", ...depotRetailRow }],
+                "Total Depot Retail Sales",
+                depotRetailTotal
+              )}
+              <table>
+                <tbody>
+                  <tr>
+                    <td class="font-bold">GRAND TOTAL</td>
+                    <td class="text-right font-bold">${formatMoney(grandTotal)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="sales-print__stack">
+              ${renderPrintDenominationTable(displayedCashRows, totalCash)}
+              ${renderPrintPaymentTable(paymentRows)}
+            </div>
+          </div>
+
+          <div class="sales-print__columns" style="margin-top: 4px;">
+            <div class="sales-print__stack">
+              ${renderPrintSimpleCountTable("NEW ACCOUNTS", [
+                { label: "Silver", value: newSilver },
+                { label: "Gold", value: newGold },
+                { label: "Platinum", value: newPlatinum }
+              ])}
+            </div>
+            <div class="sales-print__stack">
+              ${renderPrintSimpleCountTable("UPGRADES", [{ label: "Total Upgrades", value: Math.round(upgradesCount) }])}
+            </div>
+          </div>
+
+          <div class="sales-print__detail-grid">
+            ${renderPrintDetailTable("BANK TRANSFER DETAILS", bankRows)}
+            ${renderPrintDetailTable("MAYA DETAILS", mayaRows)}
+            ${renderPrintDetailTable("GCASH DETAILS", gcashRows)}
+          </div>
+
+          <div class="sales-print__footer">
+            <div>
+              <div class="sales-print__line-label">Prepared By</div>
+              <div class="sales-print__line">${escapeHtml(preparedBy || " ")}</div>
+            </div>
+            <div>
+              <div class="sales-print__line-label">Checked By</div>
+              <div class="sales-print__line">${escapeHtml(checkedBy || " ")}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  };
+
   const handlePrintReport = async () => {
+    if (isLoading) {
+      alert("Sales Report is still loading. Please wait and try again.");
+      return;
+    }
+
+    if (error) {
+      alert(error);
+      return;
+    }
+
     try {
-      await printElementById({
-        elementId: "sales-report-print",
+      await printHtmlDocument({
         title: "Daily Sales Report",
-        pageCss: "@page { size: A4 portrait; margin: 5mm; }",
+        contentHtml: buildSalesReportPrintMarkup(),
+        pageCss: "@page { size: A4 portrait; margin: 4mm; }",
         extraCss: SALES_REPORT_PRINT_CSS
       });
     } catch (printError) {
