@@ -11,7 +11,13 @@ type PrintElementOptions = PrintDocumentOptions & {
 
 const collectStyles = (): string =>
   Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-    .map((node) => node.outerHTML)
+    .map((node) => {
+      if (node instanceof HTMLLinkElement) {
+        const href = node.href;
+        return `<link rel="stylesheet" href="${href}"${node.crossOrigin ? ` crossorigin="${node.crossOrigin}"` : ""}>`;
+      }
+      return node.outerHTML;
+    })
     .join("\n");
 
 const waitForStyles = async (printDocument: Document): Promise<void> => {
@@ -96,6 +102,7 @@ export async function printHtmlDocument({
 <html>
   <head>
     <meta charset="utf-8" />
+    <base href="${window.location.origin}/" />
     <title>${title}</title>
     ${collectStyles()}
     <style>
@@ -119,6 +126,73 @@ export async function printHtmlDocument({
         margin: 0;
         padding: 0;
         background: #ffffff;
+        display: block !important;
+        visibility: visible !important;
+      }
+      .print-document *,
+      .print-document *::before,
+      .print-document *::after {
+        visibility: visible !important;
+      }
+      .print-document div,
+      .print-document section,
+      .print-document article,
+      .print-document aside,
+      .print-document main,
+      .print-document header,
+      .print-document footer,
+      .print-document nav,
+      .print-document form,
+      .print-document fieldset,
+      .print-document legend,
+      .print-document p,
+      .print-document h1,
+      .print-document h2,
+      .print-document h3,
+      .print-document h4,
+      .print-document h5,
+      .print-document h6,
+      .print-document ul,
+      .print-document ol,
+      .print-document li {
+        display: block !important;
+      }
+      .print-document span,
+      .print-document strong,
+      .print-document b,
+      .print-document em,
+      .print-document i,
+      .print-document small,
+      .print-document label {
+        display: inline !important;
+      }
+      .print-document button,
+      .print-document input,
+      .print-document textarea,
+      .print-document select {
+        display: inline-block !important;
+      }
+      .print-document table {
+        display: table !important;
+      }
+      .print-document thead {
+        display: table-header-group !important;
+      }
+      .print-document tbody {
+        display: table-row-group !important;
+      }
+      .print-document tfoot {
+        display: table-footer-group !important;
+      }
+      .print-document tr {
+        display: table-row !important;
+      }
+      .print-document th,
+      .print-document td {
+        display: table-cell !important;
+      }
+      .print-document svg {
+        display: inline-block !important;
       }
       .print-document .no-print {
         display: none !important;
