@@ -1,17 +1,7 @@
 
-import React, { useEffect, useMemo, useState } from "react";
-import { CheckIcon, ChevronsUpDownIcon } from "lucide-react@0.487.0";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { FormField } from "./form-field";
 import { FormSelect } from "./form-select";
-import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList
-} from "../ui/command";
 import {
   fetchSalesDashboardUsers,
   type SalesDashboardUser
@@ -484,8 +474,9 @@ export function EncoderForm({ onSave, savedCount }: EncoderFormProps) {
   const [users, setUsers] = useState<SalesDashboardUser[]>([]);
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [usersLoadError, setUsersLoadError] = useState<string | null>(null);
-  const [isUsernameOpen, setIsUsernameOpen] = useState(false);
-  const [usernameQuery, setUsernameQuery] = useState("");
+  const [isUsernameFocused, setIsUsernameFocused] = useState(false);
+  const [isUsernameDropdownOpen, setIsUsernameDropdownOpen] = useState(false);
+  const usernameFieldRef = useRef<HTMLLabelElement | null>(null);
 
   const handleInputChange = (field: keyof FormData, value: string) => {
     if (field === "event" || field === "originalPrice" || field === "priceAfterDiscount") {
@@ -539,11 +530,26 @@ export function EncoderForm({ onSave, savedCount }: EncoderFormProps) {
     }
   }, [formData.event]);
 
+  const shouldUseExistingUserDropdown = formData.newMember.trim().toLowerCase() === "no";
+
   useEffect(() => {
-    if (!isUsernameOpen) {
-      setUsernameQuery(formData.username);
-    }
-  }, [formData.username, isUsernameOpen]);
+    if (shouldUseExistingUserDropdown) return;
+    setIsUsernameDropdownOpen(false);
+  }, [shouldUseExistingUserDropdown]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!usernameFieldRef.current) return;
+      if (usernameFieldRef.current.contains(event.target as Node)) return;
+      setIsUsernameDropdownOpen(false);
+      setIsUsernameFocused(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, []);
 
   const netAmount = useMemo(() => {
     return getExpectedTotal(formData);
@@ -596,7 +602,7 @@ export function EncoderForm({ onSave, savedCount }: EncoderFormProps) {
   }, [netAmount, formData.modeOfPayment]);
 
   const filteredUsers = useMemo(() => {
-    const query = usernameQuery.trim().toLowerCase();
+    const query = formData.username.trim().toLowerCase();
     if (!query) return users;
 
     return users.filter((user) => {
@@ -604,13 +610,14 @@ export function EncoderForm({ onSave, savedCount }: EncoderFormProps) {
       const memberName = (user.member_name ?? "").toLowerCase();
       return username.includes(query) || memberName.includes(query);
     });
-  }, [users, usernameQuery]);
+  }, [users, formData.username]);
 
-  const hasExactUsernameMatch = useMemo(() => {
-    const query = usernameQuery.trim().toLowerCase();
-    if (!query) return false;
-    return users.some((user) => user.username.trim().toLowerCase() === query);
-  }, [users, usernameQuery]);
+  const handleUsernameChange = (value: string) => {
+    handleInputChange("username", value);
+    if (shouldUseExistingUserDropdown) {
+      setIsUsernameDropdownOpen(true);
+    }
+  };
 
   const handleClear = () => {
     setFormData(initialFormData);
@@ -755,7 +762,7 @@ export function EncoderForm({ onSave, savedCount }: EncoderFormProps) {
             value={formData.date}
             onChange={(value) => handleInputChange("date", value)}
           />
-          <label className="block">
+          <label className="block relative" ref={usernameFieldRef}>
             <span
               className="block mb-2"
               style={{
@@ -814,101 +821,140 @@ export function EncoderForm({ onSave, savedCount }: EncoderFormProps) {
             >
               Username
             </span>
-            <Popover open={isUsernameOpen} onOpenChange={setIsUsernameOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  style={{
-                    width: "100%",
-                    height: "44px",
-                    padding: "0 12px",
-                    borderWidth: "1px",
-                    borderStyle: "solid",
-                    borderColor: isUsernameOpen ? "#2E3A8C" : "#D0D5DD",
-                    borderRadius: "8px",
-                    outline: "none",
-                    backgroundColor: "#FFFFFF",
-                    color: formData.username ? "#111827" : "#9CA3AF",
-                    fontSize: "14px",
-                    lineHeight: "20px",
-                    fontWeight: 400,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between"
-                  }}
-                >
-                  <span
+            <input
+              type="text"
+              value={formData.username}
+              onChange={(event) => handleUsernameChange(event.target.value)}
+              onFocus={() => {
+                setIsUsernameFocused(true);
+                if (shouldUseExistingUserDropdown) {
+                  setIsUsernameDropdownOpen(true);
+                }
+              }}
+              onClick={() => {
+                if (shouldUseExistingUserDropdown) {
+                  setIsUsernameDropdownOpen(true);
+                }
+              }}
+              onBlur={() => setIsUsernameFocused(false)}
+              placeholder={
+                shouldUseExistingUserDropdown
+                  ? "Search or select username"
+                  : "Enter username"
+              }
+              className="w-full px-3"
+              style={{
+                height: "44px",
+                borderWidth: "1px",
+                borderStyle: "solid",
+                borderColor: isUsernameFocused ? "#2E3A8C" : "#D0D5DD",
+                borderRadius: "8px",
+                outline: "none",
+                backgroundColor: "#FFFFFF",
+                color: "#111827",
+                fontSize: "14px",
+                lineHeight: "20px",
+                fontWeight: 400
+              }}
+            />
+            {shouldUseExistingUserDropdown && isUsernameDropdownOpen ? (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 4px)",
+                  left: 0,
+                  right: 0,
+                  zIndex: 30,
+                  backgroundColor: "#FFFFFF",
+                  borderWidth: "1px",
+                  borderStyle: "solid",
+                  borderColor: "#D0D5DD",
+                  borderRadius: "8px",
+                  boxShadow: "0 10px 24px rgba(0, 0, 0, 0.10)",
+                  maxHeight: "220px",
+                  overflowY: "auto"
+                }}
+              >
+                {isUsersLoading ? (
+                  <div
                     style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap"
+                      padding: "10px 12px",
+                      fontSize: "14px",
+                      lineHeight: "20px",
+                      color: "#6B7280"
                     }}
                   >
-                    {formData.username || "Select or search username"}
-                  </span>
-                  <ChevronsUpDownIcon style={{ width: "16px", height: "16px", color: "#6B7280", flexShrink: 0 }} />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                <Command shouldFilter={false}>
-                  <CommandInput
-                    value={usernameQuery}
-                    onValueChange={setUsernameQuery}
-                    placeholder="Search username..."
-                  />
-                  <CommandList>
-                    <CommandEmpty>
-                      {usersLoadError ? usersLoadError : isUsersLoading ? "Loading usernames..." : "No username found."}
-                    </CommandEmpty>
-                    <CommandGroup heading="Usernames">
-                      {usernameQuery.trim() && !hasExactUsernameMatch ? (
-                        <CommandItem
-                          value={`create-${usernameQuery}`}
-                          onSelect={() => {
-                            const nextUsername = usernameQuery.trim();
-                            handleInputChange("username", nextUsername);
-                            setUsernameQuery(nextUsername);
-                            setIsUsernameOpen(false);
+                    Loading usernames...
+                  </div>
+                ) : usersLoadError ? (
+                  <div
+                    style={{
+                      padding: "10px 12px",
+                      fontSize: "14px",
+                      lineHeight: "20px",
+                      color: "#B91C1C"
+                    }}
+                  >
+                    {usersLoadError}
+                  </div>
+                ) : filteredUsers.length === 0 ? (
+                  <div
+                    style={{
+                      padding: "10px 12px",
+                      fontSize: "14px",
+                      lineHeight: "20px",
+                      color: "#6B7280"
+                    }}
+                  >
+                    No matching usernames
+                  </div>
+                ) : (
+                  filteredUsers.map((user) => (
+                    <button
+                      key={user.id}
+                      type="button"
+                      onClick={() => {
+                        handleInputChange("username", user.username);
+                        if (!formData.memberName && user.member_name) {
+                          handleInputChange("memberName", user.member_name);
+                        }
+                        setIsUsernameDropdownOpen(false);
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        textAlign: "left",
+                        backgroundColor:
+                          formData.username.trim().toLowerCase() === user.username.trim().toLowerCase()
+                            ? "#EFF6FF"
+                            : "#FFFFFF",
+                        color: "#111827",
+                        borderTop: "none",
+                        borderRight: "none",
+                        borderBottom: "1px solid #E5E7EB",
+                        borderLeft: "none",
+                        cursor: "pointer",
+                        fontSize: "14px",
+                        lineHeight: "20px"
+                      }}
+                    >
+                      <div>{user.username}</div>
+                      {user.member_name ? (
+                        <div
+                          style={{
+                            fontSize: "12px",
+                            lineHeight: "18px",
+                            color: "#6B7280"
                           }}
                         >
-                          <span>Use "{usernameQuery.trim()}"</span>
-                        </CommandItem>
+                          {user.member_name}
+                        </div>
                       ) : null}
-                      {filteredUsers.map((user) => (
-                        <CommandItem
-                          key={user.id}
-                          value={`${user.username}-${user.id}`}
-                          onSelect={() => {
-                            handleInputChange("username", user.username);
-                            setUsernameQuery(user.username);
-                            if (!formData.memberName && user.member_name) {
-                              handleInputChange("memberName", user.member_name);
-                            }
-                            setIsUsernameOpen(false);
-                          }}
-                        >
-                          <CheckIcon
-                            className="size-4"
-                            style={{
-                              opacity:
-                                formData.username.trim().toLowerCase() === user.username.trim().toLowerCase()
-                                  ? 1
-                                  : 0
-                            }}
-                          />
-                          <div style={{ display: "flex", flexDirection: "column" }}>
-                            <span>{user.username}</span>
-                            {user.member_name ? (
-                              <span style={{ fontSize: "12px", color: "#6B7280" }}>{user.member_name}</span>
-                            ) : null}
-                          </div>
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : null}
           </label>
           <FormSelect
             label="New Member?"
