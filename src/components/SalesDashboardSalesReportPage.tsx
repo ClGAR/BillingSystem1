@@ -29,6 +29,9 @@ const SALES_REPORT_PRINT_CSS = `
   #sales-report-print {
     background: #ffffff !important;
     color: #000000 !important;
+    font-size: 9px !important;
+    line-height: 1.05 !important;
+    zoom: 0.82;
   }
   #sales-report-print .grid {
     display: grid !important;
@@ -37,19 +40,19 @@ const SALES_REPORT_PRINT_CSS = `
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
   #sales-report-print .gap-3 {
-    gap: 0.75rem !important;
+    gap: 0.45rem !important;
   }
   #sales-report-print .gap-8 {
-    gap: 2rem !important;
+    gap: 1rem !important;
   }
   #sales-report-print .space-y-2 > * + * {
-    margin-top: 0.5rem !important;
+    margin-top: 0.25rem !important;
   }
   #sales-report-print .mt-3 {
-    margin-top: 0.75rem !important;
+    margin-top: 0.35rem !important;
   }
   #sales-report-print .mt-4 {
-    margin-top: 1rem !important;
+    margin-top: 0.5rem !important;
   }
   #sales-report-print .w-full {
     width: 100% !important;
@@ -70,10 +73,47 @@ const SALES_REPORT_PRINT_CSS = `
   #sales-report-print th,
   #sales-report-print td {
     vertical-align: top !important;
+    padding: 2px 3px !important;
+    font-size: 9px !important;
+    line-height: 1.05 !important;
   }
   #sales-report-print input {
     color: #000000 !important;
     background: transparent !important;
+    margin-top: 0.2rem !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    min-height: 18px !important;
+    line-height: 1 !important;
+  }
+  #sales-report-print .border {
+    border-color: #000000 !important;
+  }
+  #sales-report-print .rounded-md {
+    border-radius: 0 !important;
+  }
+  #sales-report-print .p-2 {
+    padding: 0.35rem !important;
+  }
+  #sales-report-print .p-3 {
+    padding: 0.4rem !important;
+  }
+  #sales-report-print .py-6 {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+  }
+  #sales-report-print .mb-3 {
+    margin-bottom: 0.35rem !important;
+  }
+  #sales-report-print .mt-2 {
+    margin-top: 0.2rem !important;
+  }
+  @supports not (zoom: 1) {
+    #sales-report-print {
+      transform: scale(0.82);
+      transform-origin: top left;
+      width: 122%;
+    }
   }
 `;
 
@@ -1154,7 +1194,7 @@ export function SalesDashboardSalesReportPage() {
       await printElementById({
         elementId: "sales-report-print",
         title: "Daily Sales Report",
-        pageCss: "@page { size: A4 portrait; margin: 10mm; }",
+        pageCss: "@page { size: A4 portrait; margin: 5mm; }",
         extraCss: SALES_REPORT_PRINT_CSS
       });
     } catch (printError) {
